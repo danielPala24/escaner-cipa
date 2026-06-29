@@ -31,3 +31,29 @@ codificados de forma fija, así nunca terminan en el archivo confirmado ni en el
 Cada solicitud `doPost` debe incluir un campo `token` que coincida con `API_TOKEN`. Si
 no coincide (o `API_TOKEN` no está definido), el script devuelve
 { ok: false, found: false, reason: "unauthorized" } sin tocar la hoja.
+
+## Hoja "Config" (Fase 1: configuración externalizada)
+
+`Code.gs` ya no tiene nombres de hoja, columnas, estados ni responsables
+codificados — todo eso vive en un JSON dentro de una hoja llamada **Config**,
+en la misma hoja de cálculo.
+
+1. Crea una hoja nueva llamada exactamente **Config** (puedes ocultarla).
+2. Copia el contenido de [`config.example.json`](config.example.json) y
+   pégalo, como texto plano, en la celda **A1** de esa hoja.
+3. Ajusta los valores al inventario real: nombres de hoja, encabezados de
+   columna (deben coincidir con el texto real de la fila de encabezado —
+   tildes y mayúsculas no importan, pero el texto sí), estados, responsables
+   y qué pide cada formulario.
+
+> El campo `provider.locator` del JSON es solo documentación — el
+> `SPREADSHEET_ID` real sigue viniendo exclusivamente de Script Properties,
+> nunca de esta celda.
+
+Si un nombre de columna en el config no se encuentra en la fila de
+encabezado configurada, el backend responde con
+`{ ok: false, reason: "config_mismatch", detail: "..." }` en vez de escribir
+en la columna equivocada. El campo `detail` dice exactamente qué columna o
+qué hoja no coincide.
+
+Para adaptar el sistema a otro inventario: edita esta celda, no `Code.gs`.

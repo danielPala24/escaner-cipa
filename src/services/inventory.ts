@@ -21,7 +21,28 @@ if (!API_TOKEN) {
   );
 }
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── Tipos: configuración ──────────────────────────────────────────────────────
+// Estos tipos reflejan lo que el backend devuelve desde la hoja "Config" —
+// ningún estado/responsable/campo de formulario está fijo en el código.
+
+export type EstadoOption = { valor: string; etiqueta: string };
+
+export type AppConfig = {
+  configVersion: number;
+  nombreInventario: string;
+  estados: EstadoOption[];
+  responsables: string[];
+  formularios: {
+    localizado: string[];
+    otroBien: string[];
+  };
+};
+
+export type GetConfigResult =
+  | ({ ok: true } & AppConfig)
+  | { ok: false; reason: string; detail?: string };
+
+// ─── Tipos: lookup / submit ─────────────────────────────────────────────────────
 
 export type LookupResult =
   | {
@@ -35,9 +56,10 @@ export type LookupResult =
     }
   | { found: false; reason?: string };
 
-export type Estado = 'E.O.' | 'E.D.';
-
-export type Responsable = 'Maria Sofia Infante Alfaro' | 'Coordinación CIPA';
+// El valor real de "estado"/"responsable" ya no es un literal fijo — viene
+// de la lista que devuelve getConfig().
+export type Estado = string;
+export type Responsable = string;
 
 export type SubmitLocalizadoPayload = {
   code: string;
@@ -61,11 +83,12 @@ export type SubmitResult =
       responsable?: string;
       warning?: string;
     }
-  | { ok: false; reason: string };
+  | { ok: false; reason: string; detail?: string };
 
-// ─── Network ──────────────────────────────────────────────────────────────────
+// ─── Network ────────
 
-// text/plain avoids the CORS preflight that GAS can't handle from native clients.
+// texto/plain evita la preflight CORS que GAS no puede manejar desde clientes nativos.
+// el preflight hace que la app falle con un error de CORS antes de que el request llegue al backend.
 async function post(body: object): Promise<unknown> {
   const res = await fetch(WEB_APP_URL as string, {
     method: 'POST',
@@ -74,13 +97,26 @@ async function post(body: object): Promise<unknown> {
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = await res.json();
-  if (typeof data === 'object' && data !== null && (data as { reason?: string }).reason === 'unauthorized') {
-    throw new Error('No autorizado: el token de la app no coincide con el del backend.');
+
+  if (typeof data === 'object' && data !== null) {
+    const reason = (data as { reason?: string }).reason;
+    if (reason === 'unauthorized') {
+      throw new Error('No autorizado: el token de la app no coincide con el del backend.');
+    }
+    if (reason === 'config_mismatch') {
+      const detail = (data as { detail?: string }).detail;
+      throw new Error(`Configuración inválida en el backend: ${detail ?? 'sin detalle'}`);
+    }
   }
+
   return data;
 }
 
-// ─── Public API ───────────────────────────────────────────────────────────────
+// ─── API publica ──────
+
+export async function getConfig(): Promise<GetConfigResult> {
+  return post({ action: 'getConfig' }) as Promise<GetConfigResult>;
+}
 
 export async function lookupAsset(code: string): Promise<LookupResult> {
   return post({ action: 'lookup', code }) as Promise<LookupResult>;

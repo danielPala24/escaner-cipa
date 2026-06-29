@@ -1,0 +1,42 @@
+{
+  "configVersion": 1,
+  "nombreInventario": "Toma Física CIPA 2026",
+  "provider": {
+    "tipo": "appsscript-sheets",
+    "locator": "<no se usa — el SPREADSHEET_ID real se configura como Script Property, nunca aquí>"
+  },
+  "hojas": {
+    "localizados":   { "nombre": "Bienes Localizados",    "headerRow": 7, "dataStartRow": 8 },
+    "otros":         { "nombre": "Otros bienes",          "headerRow": 7, "dataStartRow": 8 },
+    "noLocalizados": { "nombre": "Bienes no Localizados", "headerRow": 7, "dataStartRow": 8 }
+  },
+  "columnas": {
+    "llave":        "Placa",
+    "descripcion":  "Descripción del bien",
+    "responsable":  "Responsable del bien",
+    "ubicacion":    "Ubicación Física",
+    "marca":        "Marca",
+    "modelo":       "Modelo",
+    "serie":        "Serie",
+    "estado":       "Estado del bien",
+    "fechaEscaneo": "Fecha de escaneo"
+  },
+  "llaveDeEscaneo": "llave",
+  "estados": [
+    { "valor": "E.O.", "etiqueta": "Estado Óptimo" },
+    { "valor": "E.D.", "etiqueta": "Estado Deteriorado" }
+  ],
+  "responsables": [
+    "Maria Sofia Infante Alfaro",
+    "Coordinación CIPA"
+  ],
+  "formularios": {
+    "localizado": ["estado"],
+    "otroBien":   ["descripcion", "responsable", "estado"]
+  },
+  "normalizacion": {
+    "trimLlave": true,
+    "reemplazarNbsp": true,
+    "llaveComoTexto": true
+  }
+}

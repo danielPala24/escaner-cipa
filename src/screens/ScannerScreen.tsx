@@ -16,14 +16,16 @@ import {
   submitLocalizado,
   submitOtroBien,
   Estado,
+  EstadoOption,
   Responsable,
 } from '../services/inventory';
+import { useConfig } from '../context/ConfigContext';
 import { BLUE, ORANGE } from '../theme';
 
 // ─── Logica de estados ────────
 //
-//  escaneando ──scan──> buscando ──encontrado──> confirmar_localizado ──> enviando ──> hecho
-//                              └──no encontrado──> formulario_otro_bien        ──> enviando ──> hecho
+//  escaneando ──scan──> buscando ──encontrado──> confirming_localizado ──> enviando ──> hecho
+//                              └──no encontrado──> form_otro_bien        ──> enviando ──> hecho
 //
 // Error durante el envio regresa al estado del formulario de origen (datos conservados).
 
@@ -50,19 +52,20 @@ type DoneInfo = {
   responsable?: string;
 };
 
-// ─── Component ────────────────────────────────────────────────────────────────
+// ─── Componente ─────
 
 export default function ScannerScreen() {
+  const config = useConfig();
   const [permission, requestPermission] = useCameraPermissions();
 
   const [appState, setAppState]   = useState<AppState>('scanning');
   const [scannedCode, setScannedCode] = useState('');
   const [asset, setAsset]         = useState<AssetInfo | null>(null);
 
-  // Shared field used by both forms
+  // Campo compartido usado por ambos formularios
   const [estado, setEstado]       = useState<Estado | null>(null);
 
-  // "Otro bien" form fields
+  // Campo para formulario "Otro bien"
   const [descripcion, setDescripcion] = useState('');
   const [responsable, setResponsable] = useState<Responsable | null>(null);
 
@@ -78,7 +81,7 @@ export default function ScannerScreen() {
     setDoneInfo(null);
   }, []);
 
-  // ─── Scan handler ───────────────────────────────────────────────────────────
+  // ─── Scan handler ──────
 
   const handleBarcodeScanned = useCallback(async (result: BarcodeScanningResult) => {
     const code = result.data;
@@ -98,6 +101,7 @@ export default function ScannerScreen() {
         setAppState('confirming_localizado');
       } else {
         // Not found is a normal path — open the "Otro bien" form.
+        // No encontrado es una "opcion" normal/esperada, se abre el formulario de "Otro bien"
         setAsset(null);
         setAppState('form_otro_bien');
       }
@@ -111,7 +115,7 @@ export default function ScannerScreen() {
     }
   }, [reset]);
 
-  // ─── Submit: Bien Localizado ─────────────────────────────────────────────────
+  // ─── Submit: Bien Localizado ──────
 
   const handleSubmitLocalizado = async () => {
     if (!estado || !scannedCode) return;
@@ -146,7 +150,7 @@ export default function ScannerScreen() {
     }
   };
 
-  // ─── Submit: Otro Bien ───────────────────────────────────────────────────────
+  // ─── Submit: Otro Bien ──────
 
   const handleSubmitOtroBien = async () => {
     if (!estado || !responsable || !descripcion.trim() || !scannedCode) return;
@@ -193,7 +197,54 @@ export default function ScannerScreen() {
     }
   };
 
-  // ─── Camera permission ──────────────────────────────────────────────────────
+  // ─── Campos dinámicos por config ─────────────────────────────────────────────
+  // Qué campos pide cada formulario viene de config.formularios — nunca fijo
+  // en el componente. Roles desconocidos se ignoran (no bloquean el envío).
+
+  const campoCompleto = (campo: string): boolean => {
+    if (campo === 'estado') return !!estado;
+    if (campo === 'responsable') return !!responsable;
+    if (campo === 'descripcion') return descripcion.trim().length > 0;
+    return true;
+  };
+
+  const renderCampo = (campo: string) => {
+    if (campo === 'estado') {
+      return (
+        <View key="estado">
+          <Text style={s.fieldLabel}>Estado del bien</Text>
+          <EstadoSelector value={estado} onChange={setEstado} options={config.estados} />
+        </View>
+      );
+    }
+    if (campo === 'responsable') {
+      return (
+        <View key="responsable">
+          <Text style={s.fieldLabel}>Responsable del bien</Text>
+          <ResponsableSelector value={responsable} onChange={setResponsable} options={config.responsables} />
+        </View>
+      );
+    }
+    if (campo === 'descripcion') {
+      return (
+        <View key="descripcion">
+          <Text style={s.fieldLabel}>Descripción del bien</Text>
+          <TextInput
+            style={s.input}
+            placeholder="Descripción del activo"
+            placeholderTextColor="#aaa"
+            value={descripcion}
+            onChangeText={setDescripcion}
+            autoCapitalize="sentences"
+            returnKeyType="next"
+          />
+        </View>
+      );
+    }
+    return null;
+  };
+
+  // ─── Permisos de camara ───────
 
   if (!permission) {
     return <View style={s.center}><ActivityIndicator color={BLUE} /></View>;
@@ -210,7 +261,8 @@ export default function ScannerScreen() {
     );
   }
 
-  // ─── scanning / looking_up ──────────────────────────────────────────────────
+  // ─── scanning / looking_up ───────
+  // estados de escaneo y busqueda de activo
 
   if (appState === 'scanning' || appState === 'looking_up') {
     return (
@@ -234,7 +286,7 @@ export default function ScannerScreen() {
     );
   }
 
-  // ─── sending ────────────────────────────────────────────────────────────────
+  // ─── sending/enviando ───────
 
   if (appState === 'sending') {
     return (
@@ -245,10 +297,10 @@ export default function ScannerScreen() {
     );
   }
 
-  // ─── confirming_localizado ──────────────────────────────────────────────────
+  // ─── confirming_localizado ──────
 
   if (appState === 'confirming_localizado' && asset) {
-    const canSubmit = !!estado;
+    const canSubmit = config.formularios.localizado.every(campoCompleto);
     return (
       <ScrollView contentContainerStyle={s.form} keyboardShouldPersistTaps="handled">
         <View style={s.formHeader}>
@@ -262,8 +314,7 @@ export default function ScannerScreen() {
           <DetailRow label="Ubicación"   value={asset.ubicacion} />
         </View>
 
-        <Text style={s.fieldLabel}>Estado del bien</Text>
-        <EstadoSelector value={estado} onChange={setEstado} />
+        {config.formularios.localizado.map(renderCampo)}
 
         <Pressable
           style={[s.btn, !canSubmit && s.btnDisabled]}
@@ -280,10 +331,10 @@ export default function ScannerScreen() {
     );
   }
 
-  // ─── form_otro_bien ─────────────────────────────────────────────────────────
+  // ─── form_otro_bien ─────
 
   if (appState === 'form_otro_bien') {
-    const canSubmit = descripcion.trim().length > 0 && !!responsable && !!estado;
+    const canSubmit = config.formularios.otroBien.every(campoCompleto);
     return (
       <KeyboardAvoidingView style={{ flex: 1 }} behavior="height">
         <ScrollView contentContainerStyle={s.form} keyboardShouldPersistTaps="handled">
@@ -299,34 +350,7 @@ export default function ScannerScreen() {
             editable={false}
           />
 
-          <Text style={s.fieldLabel}>Descripción del bien</Text>
-          <TextInput
-            style={s.input}
-            placeholder="Descripción del activo"
-            placeholderTextColor="#aaa"
-            value={descripcion}
-            onChangeText={setDescripcion}
-            autoCapitalize="sentences"
-            returnKeyType="next"
-          />
-
-          <Text style={s.fieldLabel}>Responsable del bien</Text>
-          <View style={s.segmented}>
-            {(['Maria Sofia Infante Alfaro', 'Coordinación CIPA'] as Responsable[]).map((opt) => (
-              <Pressable
-                key={opt}
-                style={[s.seg, responsable === opt && s.segActive]}
-                onPress={() => setResponsable(opt)}
-              >
-                <Text style={[s.segText, responsable === opt && s.segTextActive]}>
-                  {opt}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-
-          <Text style={s.fieldLabel}>Estado del bien</Text>
-          <EstadoSelector value={estado} onChange={setEstado} />
+          {config.formularios.otroBien.map(renderCampo)}
 
           <Pressable
             style={[s.btn, !canSubmit && s.btnDisabled]}
@@ -344,7 +368,7 @@ export default function ScannerScreen() {
     );
   }
 
-  // ─── done ───────────────────────────────────────────────────────────────────
+  // ─── done/listo ─────
 
   if (appState === 'done' && doneInfo) {
     return (
@@ -382,26 +406,52 @@ export default function ScannerScreen() {
   return null;
 }
 
-// ─── Shared sub-components ────────────────────────────────────────────────────
+// ─── Sub componentes compartidos ───
 
 function EstadoSelector({
   value,
   onChange,
+  options,
 }: {
   value: Estado | null;
   onChange: (v: Estado) => void;
+  options: EstadoOption[];
 }) {
   return (
     <View style={s.segmented}>
-      {(['E.O.', 'E.D.'] as Estado[]).map((opt) => (
+      {options.map((opt) => (
+        <Pressable
+          key={opt.valor}
+          style={[s.seg, value === opt.valor && s.segActive]}
+          onPress={() => onChange(opt.valor)}
+        >
+          <Text style={[s.segText, value === opt.valor && s.segTextActive]}>
+            {opt.valor} — {opt.etiqueta}
+          </Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
+function ResponsableSelector({
+  value,
+  onChange,
+  options,
+}: {
+  value: Responsable | null;
+  onChange: (v: Responsable) => void;
+  options: string[];
+}) {
+  return (
+    <View style={s.segmented}>
+      {options.map((opt) => (
         <Pressable
           key={opt}
           style={[s.seg, value === opt && s.segActive]}
           onPress={() => onChange(opt)}
         >
-          <Text style={[s.segText, value === opt && s.segTextActive]}>
-            {opt === 'E.O.' ? 'E.O. — Estado Óptimo' : 'E.D. — Estado Deteriorado'}
-          </Text>
+          <Text style={[s.segText, value === opt && s.segTextActive]}>{opt}</Text>
         </Pressable>
       ))}
     </View>
@@ -417,7 +467,7 @@ function DetailRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
+// ─── Styles ───────
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
