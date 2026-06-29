@@ -3,6 +3,9 @@
 # dependencies
 node_modules/
 
+# Claude Code local tooling config
+.claude/
+
 # Expo
 .expo/
 dist/
@@ -25,13 +28,20 @@ expo-env.d.ts
 npm-debug.*
 yarn-debug.*
 yarn-error.*
+*.log
 
 # macOS
 .DS_Store
 *.pem
 
-# local env files
-.env*.local
+# env files ( mantengo .env.example como docu)
+.env
+.env.*
+!.env.example
+
+# Firebase / Google services config
+google-services.json
+GoogleService-Info.plist
 
 # typescript
 *.tsbuildinfo
