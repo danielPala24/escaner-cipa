@@ -57,3 +57,19 @@ en la columna equivocada. El campo `detail` dice exactamente qué columna o
 qué hoja no coincide.
 
 Para adaptar el sistema a otro inventario: edita esta celda, no `Code.gs`.
+
+## Huso horario (Fecha de escaneo)
+
+El timestamp de `fechaEscaneo` se genera explícitamente en hora de Costa Rica
+(`America/Costa_Rica`) con `Utilities.formatDate(...)`, sin importar el huso
+horario del entorno donde corre el script (que de forma silenciosa corre en
+UTC). No depender solo del timeZone del proyecto.
+
+Como segunda salvaguarda, el manifiesto del proyecto también fija el huso
+horario:
+
+1. En el editor de Apps Script, **Project Settings** (engranaje) → activa
+   **"Show appsscript.json manifest file in editor"**.
+2. Pega el contenido de [`appsscript.json`](appsscript.json) (o ajusta el que
+   ya exista para que `"timeZone"` sea `"America/Costa_Rica"`).
+3. Guarda y **redespliega una nueva versión** (ver sección "Desplegar" arriba).

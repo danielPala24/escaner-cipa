@@ -13,6 +13,13 @@ var API_TOKEN      = SCRIPT_PROPS.getProperty('API_TOKEN');
 // responsables, qué pide cada formulario) vive en ese JSON.
 var CONFIG_SHEET_NAME = 'Config';
 var CONFIG_CELL       = 'A1';
+
+// horario explícito para todo timestamp que el backend escribe. No basta
+// con el timeZone del proyecto (appsscript.json) — Date.getHours() etc. en el
+// entorno de ejecución de Apps Script corren en UTC sin importar esa config,
+// así que cada fecha se formatea explícitamente con este formato horario antes
+// de escribirla en la hoja.
+var TIMEZONE = 'America/Costa_Rica';
 // ──────────────────────────────────────────────────────────────────────────────
 
 
@@ -154,20 +161,22 @@ function handleSubmitLocalizado(payload, config) {
   var result = findRow(sheet, hojaConfig, columnMap, llaveRole, code, config);
   if (!result) return json({ ok: false, reason: 'not_found' });
 
-  var row = result.row;
-  var now = new Date();
+  var row        = result.row;
+  var fechaTexto = formatFechaCR(new Date());
 
   sheet.getRange(row, columnMap['estado']).setValue(estado);
 
   var fechaCell = sheet.getRange(row, columnMap['fechaEscaneo']);
-  fechaCell.setNumberFormat('yyyy-mm-dd hh:mm:ss');
-  fechaCell.setValue(now);
+  // Texto plano: evita que la hoja reinterprete el string como fecha con
+  // otro huso horario al guardarlo.
+  fechaCell.setNumberFormat('@');
+  fechaCell.setValue(fechaTexto);
 
   var resp = {
     ok:     true,
     placa:  getCell(sheet, row, columnMap, llaveRole, config),
     estado: estado,
-    fecha:  formatDate(now)
+    fecha:  fechaTexto
   };
   if (result.duplicate) resp.warning = 'duplicate_llave';
   return json(resp);
@@ -195,8 +204,8 @@ function handleSubmitOtroBien(payload, config) {
   var columnMap  = buildColumnMap(sheet, hojaConfig, config);
   var llaveRole  = config.llaveDeEscaneo || 'llave';
 
-  var nextRow = Math.max(sheet.getLastRow() + 1, hojaConfig.dataStartRow);
-  var now     = new Date();
+  var nextRow    = Math.max(sheet.getLastRow() + 1, hojaConfig.dataStartRow);
+  var fechaTexto = formatFechaCR(new Date());
 
   sheet.getRange(nextRow, columnMap[llaveRole]).setValue(code);
   sheet.getRange(nextRow, columnMap['descripcion']).setValue(descripcion);
@@ -204,8 +213,10 @@ function handleSubmitOtroBien(payload, config) {
   sheet.getRange(nextRow, columnMap['estado']).setValue(estado);
 
   var fechaCell = sheet.getRange(nextRow, columnMap['fechaEscaneo']);
-  fechaCell.setNumberFormat('yyyy-mm-dd hh:mm:ss');
-  fechaCell.setValue(now);
+  // Texto plano: evita que la hoja reinterprete el string como fecha con
+  // otro huso horario al guardarlo.
+  fechaCell.setNumberFormat('@');
+  fechaCell.setValue(fechaTexto);
 
   return json({
     ok:          true,
@@ -213,7 +224,7 @@ function handleSubmitOtroBien(payload, config) {
     descripcion: descripcion,
     responsable: responsable,
     estado:      estado,
-    fecha:       formatDate(now)
+    fecha:       fechaTexto
   });
 }
 
@@ -347,14 +358,11 @@ function normalize(val, config) {
   return s;
 }
 
-function formatDate(d) {
-  var pad = function(n) { return n < 10 ? '0' + n : '' + n; };
-  return d.getFullYear()     + '-' +
-         pad(d.getMonth()+1) + '-' +
-         pad(d.getDate())    + ' ' +
-         pad(d.getHours())   + ':' +
-         pad(d.getMinutes()) + ':' +
-         pad(d.getSeconds());
+// Formatea una fecha como texto en hora de Costa Rica, sin importar el huso
+// horario del entorno de ejecución. Usar SIEMPRE esta función (nunca
+// d.getHours()/getFullYear() etc., que corren en el huso del servidor).
+function formatFechaCR(d) {
+  return Utilities.formatDate(d, TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
 }
 
 function json(obj) {
