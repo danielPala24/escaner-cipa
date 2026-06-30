@@ -31,11 +31,18 @@ import { BLUE, ORANGE } from '../theme';
 
 type AppState =
   | 'scanning'
+  | 'manual_input'
   | 'looking_up'
   | 'confirming_localizado'
+  | 'confirming_not_found'
   | 'form_otro_bien'
   | 'sending'
   | 'done';
+
+// De dónde vino el código actual. Solo afecta la UI (qué tan prominente se
+// muestra la confirmación, y si un "no encontrado" pide doble confirmación) —
+// el lookup/submit en sí es idéntico para ambas fuentes.
+type InputSource = 'scan' | 'manual';
 
 type AssetInfo = {
   placa: string;
@@ -60,7 +67,12 @@ export default function ScannerScreen() {
 
   const [appState, setAppState]   = useState<AppState>('scanning');
   const [scannedCode, setScannedCode] = useState('');
+  const [inputSource, setInputSource] = useState<InputSource>('scan');
   const [asset, setAsset]         = useState<AssetInfo | null>(null);
+
+  // Texto del campo de entrada manual (separado de scannedCode, que es el
+  // código ya confirmado/normalizado que se usó para el lookup).
+  const [manualCode, setManualCode] = useState('');
 
   // Campo compartido usado por ambos formularios
   const [estado, setEstado]       = useState<Estado | null>(null);
@@ -74,6 +86,8 @@ export default function ScannerScreen() {
   const reset = useCallback(() => {
     setAppState('scanning');
     setScannedCode('');
+    setInputSource('scan');
+    setManualCode('');
     setAsset(null);
     setEstado(null);
     setDescripcion('');
@@ -81,11 +95,15 @@ export default function ScannerScreen() {
     setDoneInfo(null);
   }, []);
 
-  // ─── Scan handler ──────
+  // ─── Lookup compartido (escaneo Y entrada manual pasan por aquí) ─────────────
+  // El código puede venir de la cámara o del teclado — a partir de este punto
+  // el flujo es idéntico, salvo el manejo del caso "no encontrado": un código
+  // manual no encontrado pide doble confirmación (riesgo de error de tipeo),
+  // uno escaneado va directo al formulario de "Otro bien" como siempre.
 
-  const handleBarcodeScanned = useCallback(async (result: BarcodeScanningResult) => {
-    const code = result.data;
+  const performLookup = useCallback(async (code: string, source: InputSource) => {
     setScannedCode(code);
+    setInputSource(source);
     setAppState('looking_up');
 
     try {
@@ -100,20 +118,45 @@ export default function ScannerScreen() {
         });
         setAppState('confirming_localizado');
       } else {
-        // Not found is a normal path — open the "Otro bien" form.
-        // No encontrado es una "opcion" normal/esperada, se abre el formulario de "Otro bien"
         setAsset(null);
-        setAppState('form_otro_bien');
+        if (source === 'manual') {
+          // Entrada manual sin coincidencia: puede ser un typo — pedir
+          // confirmación explícita antes de crear un "otro bien".
+          setAppState('confirming_not_found');
+        } else {
+          // Escaneado y no encontrado sigue siendo el camino normal/esperado.
+          setAppState('form_otro_bien');
+        }
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      Alert.alert(
-        'Error de conexión',
-        `No se pudo consultar el inventario.\n\nDetalle: ${msg}`,
-        [{ text: 'Volver a escanear', onPress: reset }],
-      );
+      if (source === 'manual') {
+        Alert.alert(
+          'Error de conexión',
+          `No se pudo consultar el inventario.\n\nDetalle: ${msg}`,
+          [{ text: 'Reintentar', onPress: () => setAppState('manual_input') }],
+        );
+      } else {
+        Alert.alert(
+          'Error de conexión',
+          `No se pudo consultar el inventario.\n\nDetalle: ${msg}`,
+          [{ text: 'Volver a escanear', onPress: reset }],
+        );
+      }
     }
   }, [reset]);
+
+  const handleBarcodeScanned = useCallback((result: BarcodeScanningResult) => {
+    performLookup(result.data, 'scan');
+  }, [performLookup]);
+
+  // Misma normalización que aplica el backend (NBSP→espacio, luego trim) —
+  // de cortesía, el backend ya normaliza igual sin importar el origen.
+  const handleManualSubmit = () => {
+    const code = manualCode.replace(/ /g, ' ').trim();
+    if (!code) return;
+    performLookup(code, 'manual');
+  };
 
   // ─── Submit: Bien Localizado ──────
 
@@ -279,9 +322,86 @@ export default function ScannerScreen() {
               <Text style={[s.hint, { marginTop: 12 }]}>Buscando activo…</Text>
             </>
           ) : (
-            <Text style={s.hint}>Apunte la cámara hacia un código de barras</Text>
+            <>
+              <Text style={s.hint}>Apunte la cámara hacia un código de barras</Text>
+              <Pressable
+                style={s.manualEntryBtn}
+                onPress={() => { setManualCode(''); setAppState('manual_input'); }}
+              >
+                <Text style={s.manualEntryBtnText}>Ingresar código manualmente</Text>
+              </Pressable>
+            </>
           )}
         </View>
+      </View>
+    );
+  }
+
+  // ─── manual_input ───────────────────────────────────────────────────────────
+
+  if (appState === 'manual_input') {
+    const canSubmit = manualCode.trim().length > 0;
+    return (
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior="height">
+        <ScrollView contentContainerStyle={s.form} keyboardShouldPersistTaps="handled">
+          <View style={s.formHeader}>
+            <Text style={s.formHeaderBadge}>Entrada Manual</Text>
+            <Text style={[s.formHeaderCode, { fontSize: 18 }]}>Ingrese el código de la placa</Text>
+          </View>
+
+          <Text style={s.fieldLabel}>Código</Text>
+          <TextInput
+            style={s.input}
+            placeholder="Ej. 80415, AI-0512, M08"
+            placeholderTextColor="#aaa"
+            value={manualCode}
+            onChangeText={setManualCode}
+            autoCapitalize="characters"
+            autoFocus
+            returnKeyType="search"
+            onSubmitEditing={canSubmit ? handleManualSubmit : undefined}
+          />
+
+          <Pressable
+            style={[s.btn, !canSubmit && s.btnDisabled]}
+            onPress={handleManualSubmit}
+            disabled={!canSubmit}
+          >
+            <Text style={s.btnText}>Buscar</Text>
+          </Pressable>
+
+          <Pressable onPress={reset} style={s.cancelBtn}>
+            <Text style={s.cancelText}>Cancelar</Text>
+          </Pressable>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    );
+  }
+
+  // ─── confirming_not_found (solo entrada manual) ──────────────────────────────
+  // Un código manual no encontrado puede ser un typo — se exige una segunda
+  // confirmación explícita antes de dejarlo pasar al formulario de "Otro bien".
+
+  if (appState === 'confirming_not_found') {
+    return (
+      <View style={s.center}>
+        <Text style={s.warningTitle}>Código no encontrado</Text>
+        <Text style={s.message}>
+          El código "{scannedCode}" no está registrado en el inventario.{'\n\n'}
+          ¿Está seguro de que lo escribió bien?
+        </Text>
+        <Pressable
+          style={[s.btn, { width: '100%' }]}
+          onPress={() => setAppState('manual_input')}
+        >
+          <Text style={s.btnText}>Revisar / corregir</Text>
+        </Pressable>
+        <Pressable
+          style={[s.btn, s.btnOutline, { width: '100%' }]}
+          onPress={() => setAppState('form_otro_bien')}
+        >
+          <Text style={[s.btnText, s.btnTextOutline]}>Sí, continuar de todos modos</Text>
+        </Pressable>
       </View>
     );
   }
@@ -308,7 +428,16 @@ export default function ScannerScreen() {
           <Text style={s.formHeaderCode}>{asset.placa}</Text>
         </View>
 
-        <View style={s.card}>
+        {inputSource === 'manual' && (
+          <View style={s.manualWarningBanner}>
+            <Text style={s.manualWarningText}>
+              Entrada manual: verifique cuidadosamente que estos datos correspondan
+              al activo correcto antes de continuar.
+            </Text>
+          </View>
+        )}
+
+        <View style={[s.card, inputSource === 'manual' && s.cardManualHighlight]}>
           <DetailRow label="Descripción" value={asset.descripcion} />
           <DetailRow label="Marca"       value={asset.marca} />
           <DetailRow label="Ubicación"   value={asset.ubicacion} />
@@ -577,4 +706,28 @@ const s = StyleSheet.create({
   doneButtons: { flexDirection: 'row', width: '100%', marginTop: 8 },
 
   message: { textAlign: 'center', color: '#444', fontSize: 15, marginBottom: 20 },
+
+  // Entrada manual
+  manualEntryBtn: {
+    marginTop: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: BLUE,
+  },
+  manualEntryBtnText: { color: BLUE, fontSize: 14, fontWeight: '700', textAlign: 'center' },
+
+  manualWarningBanner: {
+    backgroundColor: '#FFF4E5',
+    borderWidth: 1,
+    borderColor: ORANGE,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+  },
+  manualWarningText: { color: '#8A5300', fontSize: 13, lineHeight: 18 },
+  cardManualHighlight: { borderWidth: 2, borderColor: ORANGE },
+
+  warningTitle: { fontSize: 22, fontWeight: 'bold', color: '#111', marginBottom: 16, textAlign: 'center' },
 });
